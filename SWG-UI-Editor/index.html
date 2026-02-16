@@ -6,39 +6,32 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app">
-        <div id="left-panel">
-            <canvas id="mapCanvas" width="512" height="512"></canvas>
-        </div>
 
-        <div id="right-panel">
-            <h2>Planets</h2>
-            <table id="planetTable">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>X</th>
-                        <th>Y</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-
-            <h2>Buttons</h2>
-            <table id="buttonTable">
-                <thead>
-                    <tr>
-                        <th>Label</th>
-                        <th>Parent Planet</th>
-                        <th>X</th>
-                        <th>Y</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
+<div id="app">
+    <div id="left-panel">
+        <canvas id="mapCanvas" width="512" height="512"></canvas>
+        <input type="file" id="fileInput" accept=".inc,.xml">
     </div>
 
-    <script src="editor.js"></script>
+    <div id="right-panel">
+        <h2>Planets</h2>
+        <table id="planetTable">
+            <thead>
+                <tr><th>Name</th><th>X</th><th>Y</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <h2>Buttons</h2>
+        <table id="buttonTable">
+            <thead>
+                <tr><th>Label</th><th>Parent</th><th>X</th><th>Y</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script src="load.js"></script>
 </body>
 </html>
