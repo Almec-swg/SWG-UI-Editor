@@ -34,3 +34,8 @@ input {
   border: 1px solid #555;
   padding: 4px;
 }
+
+canvas {
+  border: 1px solid #555;
+  background: #000;
+}
