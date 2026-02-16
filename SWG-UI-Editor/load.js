@@ -15,12 +15,17 @@ let nextId = 1;
 const genId = () => nextId++;
 
 // -----------------------------------------------------------------------------
-// File Input Listener
+// Parse Button Listener
 // -----------------------------------------------------------------------------
 
-document.getElementById("fileInput").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+document.getElementById("parseBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("fileInput");
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Select a .inc file first.");
+        return;
+    }
 
     const text = await file.text();
     parseInc(text);
