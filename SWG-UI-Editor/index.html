@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SWG .inc UI Editor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>SWG UI .inc Editor</h1>
+
+  <section>
+    <h2>Load .inc file</h2>
+    <input type="file" id="fileInput" accept=".inc,.txt">
+    <br><br>
+    <textarea id="rawInput" rows="10" cols="100" placeholder="Or paste .inc content here"></textarea>
+    <br>
+    <button id="parseBtn">Parse</button>
+  </section>
+
+  <section>
+    <h2>Planets</h2>
+    <div id="planetsContainer"></div>
+    <button id="addPlanetBtn">Add Planet</button>
+  </section>
+
+  <section>
+    <h2>Export</h2>
+    <button id="exportBtn">Generate .inc</button>
+    <br><br>
+    <textarea id="output" rows="10" cols="100" placeholder="Modified .inc will appear here"></textarea>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
