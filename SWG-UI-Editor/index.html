@@ -8,12 +8,18 @@
 <body>
 
 <div id="app">
+
+    <!-- LEFT PANEL -->
     <div id="left-panel">
         <canvas id="mapCanvas" width="512" height="512"></canvas>
+
         <input type="file" id="fileInput" accept=".inc,.xml">
+        <button id="parseBtn">Parse .inc</button>
     </div>
 
+    <!-- RIGHT PANEL -->
     <div id="right-panel">
+
         <h2>Planets</h2>
         <table id="planetTable">
             <thead>
@@ -29,7 +35,9 @@
             </thead>
             <tbody></tbody>
         </table>
+
     </div>
+
 </div>
 
 <script src="load.js"></script>
