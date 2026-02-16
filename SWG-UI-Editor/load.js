@@ -41,8 +41,17 @@ function handleParse() {
     return;
   }
 
+  // ⭐ FIX: Wrap SWG .inc in a root element so DOMParser accepts it
+  const wrapped = `<Root>${loadedText}</Root>`;
   const parser = new DOMParser();
-  xmlDoc = parser.parseFromString(loadedText, "text/xml");
+  xmlDoc = parser.parseFromString(wrapped, "text/xml");
+
+  // Detect parser errors
+  if (xmlDoc.querySelector("parsererror")) {
+    console.error("XML parse error:", xmlDoc.querySelector("parsererror").textContent);
+    alert("The .inc file contains invalid XML syntax. Parsing failed.");
+    return;
+  }
 
   buildPlanetsModel();
   buildButtonsModel();
@@ -201,7 +210,7 @@ function buildDataSourcesModel() {
 }
 
 // ============================================================================
-// DDS decoder (BC1 / DXT1) — inline
+// DDS decoder (BC1 / DXT1)
 // ============================================================================
 
 function parseDDS(arrayBuffer) {
@@ -548,6 +557,7 @@ function moveButton(button, newX, newY) {
     button.node.setAttribute("Location", `${Math.round(newX)},${Math.round(newY)}`);
   }
 }
+
 // ============================================================================
 // Tables (planets + buttons)
 // ============================================================================
@@ -591,22 +601,25 @@ function renderDataSourcesTable() {
   dataSources.forEach(ds => {
     const tr = document.createElement("tr");
 
+    // Planet / DataSource name
     const nameTd = document.createElement("td");
     nameTd.textContent = ds.name;
     tr.appendChild(nameTd);
 
+    // appearanceTemplate editor
     const appTd = document.createElement("td");
     const input = document.createElement("input");
     input.type = "text";
     input.value = ds.appearanceTemplate;
+
     input.addEventListener("change", () => {
       ds.appearanceTemplate = input.value;
       ds.dataNode.setAttribute("appearanceTemplate", input.value);
     });
+
     appTd.appendChild(input);
     tr.appendChild(appTd);
 
     dataSourceTableBody.appendChild(tr);
   });
 }
-
