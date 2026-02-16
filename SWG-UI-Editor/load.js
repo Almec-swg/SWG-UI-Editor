@@ -1,5 +1,5 @@
 // ============================================================================
-// SWG Galaxy Map Editor — DOM-based parser + DDS background + dragging + DataSource editor
+// SWG Galaxy Map Editor — SWG-aware sanitizer + DDS background + dragging + DataSource editor
 // ============================================================================
 
 let xmlDoc = null;
@@ -10,6 +10,28 @@ let nextId = 1;
 const genId = () => nextId++;
 
 // ============================================================================
+// SWG .inc sanitizer (preserve original syntax on export)
+// ============================================================================
+
+function sanitizeInc(text) {
+  let out = text;
+
+  // 1. Escape & that are not already entities
+  out = out.replace(/&(?![a-zA-Z]+;)/g, "&amp;");
+
+  // 2. Escape @ui: tokens inside text nodes
+  out = out.replace(/>@ui:/g, ">&#64;ui:");
+
+  // 3. Convert illegal attribute names with dots into XML-safe names
+  //    Example: foo.bar="x" → foo_bar="x"
+  //    Case is preserved; we just swap '.' → '_'
+  out = out.replace(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)=/g, "$1_$2=");
+
+  // 4. Wrap in a root element
+  return `<Root>${out}</Root>`;
+}
+
+// ============================================================================
 // UI wiring
 // ============================================================================
 
@@ -18,7 +40,6 @@ document.getElementById("parseBtn").addEventListener("click", handleParse);
 
 let loadedText = "";
 
-// optional: if you have an export button
 const exportBtn = document.getElementById("exportBtn");
 if (exportBtn) {
   exportBtn.addEventListener("click", handleExport);
@@ -41,15 +62,13 @@ function handleParse() {
     return;
   }
 
-  // ⭐ FIX: Wrap SWG .inc in a root element so DOMParser accepts it
-  const wrapped = `<Root>${loadedText}</Root>`;
+  const wrapped = sanitizeInc(loadedText);
   const parser = new DOMParser();
   xmlDoc = parser.parseFromString(wrapped, "text/xml");
 
-  // Detect parser errors
   if (xmlDoc.querySelector("parsererror")) {
     console.error("XML parse error:", xmlDoc.querySelector("parsererror").textContent);
-    alert("The .inc file contains invalid XML syntax. Parsing failed.");
+    alert("The .inc file contains invalid XML syntax even after sanitizing.");
     return;
   }
 
@@ -57,11 +76,7 @@ function handleParse() {
   buildButtonsModel();
   buildDataSourcesModel();
 
-  loadBackground().then(() => {
-    render();
-  }).catch(() => {
-    render();
-  });
+  loadBackground().then(render).catch(render);
 }
 
 function handleExport() {
@@ -70,7 +85,17 @@ function handleExport() {
     return;
   }
   const serializer = new XMLSerializer();
-  const output = serializer.serializeToString(xmlDoc);
+  let output = serializer.serializeToString(xmlDoc);
+
+  // Remove <Root> wrapper
+  output = output.replace(/^<Root>/, "").replace(/<\/Root>$/, "");
+
+  // Restore SWG-style dotted attributes (case preserved)
+  output = output.replace(/([A-Za-z0-9_]+)_([A-Za-z0-9_]+)=/g, "$1.$2=");
+
+  // Restore @ui: tokens
+  output = output.replace(/&#64;ui:/g, "@ui:");
+
   const outEl = document.getElementById("output");
   if (outEl) outEl.value = output;
 }
@@ -189,10 +214,8 @@ function buildDataSourcesModel() {
   dataSources = [];
   if (!xmlDoc) return;
 
-  const ns = xmlDoc.querySelector("Namespace[Name='data']");
-  if (!ns) return;
-
-  const dsNodes = Array.from(ns.querySelectorAll("DataSource"));
+  // Your file uses inline DataSource, not Namespace Name='data', so we grab all DataSource nodes
+  const dsNodes = Array.from(xmlDoc.querySelectorAll("DataSource"));
 
   dsNodes.forEach(ds => {
     const name = ds.getAttribute("Name") || "";
@@ -333,7 +356,7 @@ function decodeDXT1(dds) {
 }
 
 // ============================================================================
-// Background loading (DDS) — Option B patch + FIXED IMAGE DETECTION
+// Background loading (DDS) — Option B patch + flexible image detection
 // ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
@@ -355,12 +378,10 @@ async function loadBackground() {
 
     let imgNode = null;
 
-    // Try the expected name first
     if (sections.galaxyMap) {
       imgNode = sections.galaxyMap.querySelector("Image[Name='imageGalaxy']");
     }
 
-    // If not found, fall back to ANY image inside GalaxyMap
     if (!imgNode && sections.galaxyMap) {
       imgNode = sections.galaxyMap.querySelector("Image");
     }
@@ -601,22 +622,18 @@ function renderDataSourcesTable() {
   dataSources.forEach(ds => {
     const tr = document.createElement("tr");
 
-    // Planet / DataSource name
     const nameTd = document.createElement("td");
     nameTd.textContent = ds.name;
     tr.appendChild(nameTd);
 
-    // appearanceTemplate editor
     const appTd = document.createElement("td");
     const input = document.createElement("input");
     input.type = "text";
     input.value = ds.appearanceTemplate;
-
     input.addEventListener("change", () => {
       ds.appearanceTemplate = input.value;
       ds.dataNode.setAttribute("appearanceTemplate", input.value);
     });
-
     appTd.appendChild(input);
     tr.appendChild(appTd);
 
