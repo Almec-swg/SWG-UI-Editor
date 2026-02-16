@@ -1,418 +1,224 @@
-let xmlDoc = null;
+// -----------------------------------------------------------------------------
+// Data Model
+// -----------------------------------------------------------------------------
 
-let draggingPlanet = null;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+let planets = [];
+let buttons = [];
 
-const canvas = document.getElementById('previewCanvas');
-const ctx = canvas.getContext('2d');
+let nextId = 1;
+const genId = () => nextId++;
 
-canvas.addEventListener('mousedown', onCanvasMouseDown);
-canvas.addEventListener('mousemove', onCanvasMouseMove);
-canvas.addEventListener('mouseup', onCanvasMouseUp);
-canvas.addEventListener('mouseleave', onCanvasMouseUp);
+// -----------------------------------------------------------------------------
+// Load .inc XML File
+// -----------------------------------------------------------------------------
 
-// Wire up UI events
-document.getElementById('fileInput').addEventListener('change', handleFileSelect);
-document.getElementById('parseBtn').addEventListener('click', handleParse);
-document.getElementById('exportBtn').addEventListener('click', handleExport);
-document.getElementById('addPlanetBtn').addEventListener('click', handleAddPlanet);
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-// Load file into textarea
-function handleFileSelect(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+    const text = await file.text();
+    parseInc(text);
+    render();
+});
 
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    document.getElementById('rawInput').value = ev.target.result;
-  };
-  reader.readAsText(file);
-}
+// -----------------------------------------------------------------------------
+// Parse SWG .inc XML
+// -----------------------------------------------------------------------------
 
-// Parse XML
-function handleParse() {
-  const text = document.getElementById('rawInput').value.trim();
-  if (!text) {
-    alert('Paste or load a .inc file first.');
-    return;
-  }
+function parseInc(xmlText) {
+    planets = [];
+    buttons = [];
 
-  const parser = new DOMParser();
-  xmlDoc = parser.parseFromString(text, 'text/xml');
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, "text/xml");
 
-  renderPlanets();
-  renderButtons();
-  renderCodeData();
-  renderPreview();
-}
+    const windows = [...xml.getElementsByTagName("Window")];
+    const btns = [...xml.getElementsByTagName("Button")];
 
-// Export XML
-function handleExport() {
-  if (!xmlDoc) {
-    alert('Nothing parsed yet.');
-    return;
-  }
+    // --- PLANETS -------------------------------------------------------------
+    windows.forEach(win => {
+        const name = win.getAttribute("Name");
+        if (!name) return;
 
-  const serializer = new XMLSerializer();
-  const output = serializer.serializeToString(xmlDoc);
-  document.getElementById('output').value = output;
-}
+        // Detect planets by naming convention
+        if (!name.toLowerCase().includes("planet")) return;
 
-// Locate key sections
-function getMapSections() {
-  if (!xmlDoc) return null;
+        const loc = win.querySelector("Location");
+        if (!loc) return;
 
-  const ticketPurchase = xmlDoc.querySelector("Page[Name='TicketPurchase'] Page[Name='ticketPurchase']");
-  if (!ticketPurchase) return null;
+        const x = parseFloat(loc.getAttribute("X"));
+        const y = parseFloat(loc.getAttribute("Y"));
 
-  const map = ticketPurchase.querySelector("Page[Name='map']");
-  if (!map) return null;
-
-  return {
-    map,
-    planetNames: map.querySelector("Page[Name='PlanetNames']"),
-    planets: map.querySelector("Page[Name='Planets']"),
-    galaxyMap: map.querySelector("Page[Name='GalaxyMap']")
-  };
-}
-
-// Extract planets into a model
-function getPlanetsModel() {
-  const sections = getMapSections();
-  if (!sections) return [];
-
-  const { planetNames, planets } = sections;
-
-  const labels = Array.from(planetNames.querySelectorAll("Text"));
-  const pages = Array.from(planets.querySelectorAll(":scope > Page"));
-
-  return labels.map(label => {
-    const name = label.getAttribute('Name');
-    const loc = label.getAttribute('Location') || '0,0';
-
-    const page = pages.find(p => p.getAttribute('Name') === name);
-    let sourceResource = '';
-
-    if (page) {
-      const img = page.querySelector('Image');
-      if (img) sourceResource = img.getAttribute('SourceResource') || '';
-    }
-
-    return {
-      name,
-      labelNode: label,
-      pageNode: page || null,
-      location: loc,
-      sourceResource
-    };
-  });
-}
-
-// Render editable planet table
-function renderPlanets() {
-  const container = document.getElementById('planetsContainer');
-  container.innerHTML = '';
-
-  const planets = getPlanetsModel();
-  if (!planets.length) {
-    container.textContent = 'No planets found.';
-    return;
-  }
-
-  const table = document.createElement('table');
-  table.border = '1';
-
-  const header = document.createElement('tr');
-  header.innerHTML = `
-    <th>Name</th>
-    <th>Label Location</th>
-    <th>Map Resource</th>
-  `;
-  table.appendChild(header);
-
-  planets.forEach(planet => {
-    const row = document.createElement('tr');
-
-    const nameCell = document.createElement('td');
-    nameCell.textContent = planet.name;
-    row.appendChild(nameCell);
-
-    const locCell = document.createElement('td');
-    const locInput = document.createElement('input');
-    locInput.value = planet.location;
-    locInput.size = 10;
-    locInput.addEventListener('change', () => {
-      planet.location = locInput.value;
-      planet.labelNode.setAttribute('Location', locInput.value);
-      renderPreview();
+        planets.push({
+            id: genId(),
+            name,
+            x,
+            y,
+            radius: 10,
+            color: "#7fd4ff",
+            buttons: []
+        });
     });
-    locCell.appendChild(locInput);
-    row.appendChild(locCell);
 
-    const resCell = document.createElement('td');
-    const resInput = document.createElement('input');
-    resInput.value = planet.sourceResource;
-    resInput.size = 25;
-    resInput.addEventListener('change', () => {
-      planet.sourceResource = resInput.value;
-      if (!planet.pageNode) createPlanetPage(planet);
-      const img = planet.pageNode.querySelector('Image');
-      if (img) img.setAttribute('SourceResource', resInput.value);
+    // --- BUTTONS -------------------------------------------------------------
+    btns.forEach(btn => {
+        const name = btn.getAttribute("Name") || "Button";
+        const loc = btn.querySelector("Location");
+        if (!loc) return;
+
+        const x = parseFloat(loc.getAttribute("X"));
+        const y = parseFloat(loc.getAttribute("Y"));
+        const w = parseFloat(loc.getAttribute("Width")) || 80;
+        const h = parseFloat(loc.getAttribute("Height")) || 16;
+
+        // Try to detect parent planet by name
+        let parentPlanet = planets.find(p =>
+            name.toLowerCase().includes(p.name.toLowerCase().replace("planet_", ""))
+        );
+
+        const buttonObj = {
+            id: genId(),
+            label: name,
+            x,
+            y,
+            width: w,
+            height: h,
+            parentPlanetId: parentPlanet ? parentPlanet.id : null
+        };
+
+        buttons.push(buttonObj);
+
+        if (parentPlanet) {
+            parentPlanet.buttons.push(buttonObj);
+        }
     });
-    resCell.appendChild(resInput);
-    row.appendChild(resCell);
-
-    table.appendChild(row);
-  });
-
-  container.appendChild(table);
 }
 
-// Create missing planet map pages
-function createPlanetPage(planet) {
-  const sections = getMapSections();
-  if (!sections) return;
-  const { planets } = sections;
+// -----------------------------------------------------------------------------
+// Canvas + Rendering
+// -----------------------------------------------------------------------------
 
-  const page = xmlDoc.createElement('Page');
-  page.setAttribute('BackgroundOpacity', '1.00');
-  page.setAttribute('Name', planet.name);
-  page.setAttribute('PackLocation', 'nfn,nfn');
-  page.setAttribute('PackSize', 'a,a');
-  page.setAttribute('RStyleDefault', 'rs_default');
-  page.setAttribute('ScrollExtent', '498,482');
-  page.setAttribute('Size', '498,482');
+const canvas = document.getElementById("mapCanvas");
+const ctx = canvas.getContext("2d");
 
-  const img = xmlDoc.createElement('Image');
-  img.setAttribute('BackgroundOpacity', '1.00');
-  img.setAttribute('Name', 'New Image');
-  img.setAttribute('PackLocation', 'nfn,nfn');
-  img.setAttribute('PackSize', 'a,a');
-  img.setAttribute('ScrollExtent', '498,482');
-  img.setAttribute('Size', '498,482');
-  img.setAttribute('SourceRect', '0,0,1024,1024');
-  img.setAttribute('SourceResource', planet.sourceResource || '');
-
-  page.appendChild(img);
-  planets.appendChild(page);
-
-  planet.pageNode = page;
+function drawBackground() {
+    ctx.fillStyle = "#000014";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-// Add new planet
-function handleAddPlanet() {
-  const name = prompt('New planet name (e.g., Kashyyyk):');
-  if (!name) return;
-
-  const sections = getMapSections();
-  if (!sections) return;
-
-  const { planetNames } = sections;
-
-  const label = xmlDoc.createElement('Text');
-  label.setAttribute('Name', name);
-  label.setAttribute('LocalText', name);
-  label.setAttribute('Location', '200,200');
-  label.setAttribute('Font', 'bold_13');
-  label.setAttribute('TextColor', '#62FF15');
-  label.textContent = name;
-
-  planetNames.appendChild(label);
-
-  renderPlanets();
-  renderPreview();
-}
-
-// Extract GalaxyMap buttons
-function getGalaxyButtons() {
-  const sections = getMapSections();
-  if (!sections) return [];
-
-  const { galaxyMap } = sections;
-  if (!galaxyMap) return [];
-
-  const buttons = Array.from(galaxyMap.querySelectorAll("Button"));
-
-  return buttons.map(btn => ({
-    name: btn.getAttribute('Name'),
-    node: btn,
-    location: btn.getAttribute('Location') || '0,0'
-  }));
-}
-
-// Render GalaxyMap button table
-function renderButtons() {
-  const container = document.getElementById('buttonsContainer');
-  container.innerHTML = '';
-
-  const buttons = getGalaxyButtons();
-  if (!buttons.length) {
-    container.textContent = 'No GalaxyMap buttons found.';
-    return;
-  }
-
-  const table = document.createElement('table');
-  table.border = '1';
-
-  const header = document.createElement('tr');
-  header.innerHTML = `
-    <th>Name</th>
-    <th>Location</th>
-  `;
-  table.appendChild(header);
-
-  buttons.forEach(btn => {
-    const row = document.createElement('tr');
-
-    const nameCell = document.createElement('td');
-    nameCell.textContent = btn.name;
-    row.appendChild(nameCell);
-
-    const locCell = document.createElement('td');
-    const locInput = document.createElement('input');
-    locInput.value = btn.location;
-    locInput.size = 10;
-    locInput.addEventListener('change', () => {
-      btn.location = locInput.value;
-      btn.node.setAttribute('Location', locInput.value);
-    });
-    locCell.appendChild(locInput);
-    row.appendChild(locCell);
-
-    table.appendChild(row);
-  });
-
-  container.appendChild(table);
-}
-
-// Extract CodeData
-function getCodeData() {
-  const codeData = xmlDoc.querySelector("Data[Name='CodeData']");
-  if (!codeData) return [];
-
-  const attributes = Array.from(codeData.attributes);
-
-  return attributes.map(attr => ({
-    key: attr.name,
-    value: attr.value,
-    node: codeData
-  }));
-}
-
-// Render CodeData table
-function renderCodeData() {
-  const container = document.getElementById('codeDataContainer');
-  container.innerHTML = '';
-
-  const entries = getCodeData();
-  if (!entries.length) {
-    container.textContent = 'No CodeData found.';
-    return;
-  }
-
-  const table = document.createElement('table');
-  table.border = '1';
-
-  const header = document.createElement('tr');
-  header.innerHTML = `
-    <th>Key</th>
-    <th>Value</th>
-  `;
-  table.appendChild(header);
-
-  entries.forEach(entry => {
-    const row = document.createElement('tr');
-
-    const keyCell = document.createElement('td');
-    keyCell.textContent = entry.key;
-    row.appendChild(keyCell);
-
-    const valCell = document.createElement('td');
-    const valInput = document.createElement('input');
-    valInput.value = entry.value;
-    valInput.size = 40;
-    valInput.addEventListener('change', () => {
-      entry.node.setAttribute(entry.key, valInput.value);
-    });
-    valCell.appendChild(valInput);
-    row.appendChild(valCell);
-
-    table.appendChild(row);
-  });
-
-  container.appendChild(table);
-}
-
-// Coordinate preview
-function renderPreview() {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const planets = getPlanetsModel();
-
-  planets.forEach(p => {
-    const [x, y] = p.location.split(',').map(Number);
-
-    ctx.fillStyle = (p === draggingPlanet) ? '#ffff00' : '#00ff00';
+function drawPlanet(p) {
     ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
     ctx.fill();
 
-    ctx.fillStyle = '#0f0';
-    ctx.fillText(p.name, x + 8, y + 4);
-  });
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    ctx.fillStyle = "#cfd8ff";
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(p.name, p.x, p.y - p.radius - 4);
 }
 
-// Dragging logic
-function onCanvasMouseDown(e) {
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
+function drawButton(b) {
+    ctx.fillStyle = "#1b2438";
+    ctx.fillRect(b.x, b.y, b.width, b.height);
 
-  const planets = getPlanetsModel();
+    ctx.strokeStyle = "#4a5a8a";
+    ctx.strokeRect(b.x, b.y, b.width, b.height);
 
-  for (const p of planets) {
-    const [x, y] = p.location.split(',').map(Number);
+    ctx.fillStyle = "#d6e0ff";
+    ctx.font = "9px system-ui";
+    ctx.fillText(b.label, b.x + 3, b.y + 11);
+}
 
-    const dx = mouseX - x;
-    const dy = mouseY - y;
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
 
-    if (dx*dx + dy*dy <= 25) {
-      draggingPlanet = p;
-      dragOffsetX = mouseX - x;
-      dragOffsetY = mouseY - y;
-      return;
+    planets.forEach(drawPlanet);
+    buttons.forEach(drawButton);
+
+    renderTables();
+}
+
+// -----------------------------------------------------------------------------
+// Dragging Logic
+// -----------------------------------------------------------------------------
+
+let drag = { active: false, planet: null, offsetX: 0, offsetY: 0 };
+
+canvas.addEventListener("mousedown", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const p = hitPlanet(x, y);
+    if (p) {
+        drag.active = true;
+        drag.planet = p;
+        drag.offsetX = x - p.x;
+        drag.offsetY = y - p.y;
     }
-  }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+    if (!drag.active) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    movePlanet(drag.planet, x - drag.offsetX, y - drag.offsetY);
+    render();
+});
+
+canvas.addEventListener("mouseup", () => drag.active = false);
+canvas.addEventListener("mouseleave", () => drag.active = false);
+
+function hitPlanet(x, y) {
+    return planets.find(p => {
+        const dx = x - p.x;
+        const dy = y - p.y;
+        return Math.sqrt(dx * dx + dy * dy) <= p.radius + 3;
+    });
 }
 
-function onCanvasMouseMove(e) {
-  if (!draggingPlanet) return;
+function movePlanet(planet, newX, newY) {
+    const dx = newX - planet.x;
+    const dy = newY - planet.y;
 
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
+    planet.x = newX;
+    planet.y = newY;
 
-  const newX = Math.round(mouseX - dragOffsetX);
-  const newY = Math.round(mouseY - dragOffsetY);
-
-  draggingPlanet.location = `${newX},${newY}`;
-  draggingPlanet.labelNode.setAttribute('Location', draggingPlanet.location);
-
-  // Sync GalaxyMap button if exists
-  const sections = getMapSections();
-  if (sections && sections.galaxyMap) {
-    const button = sections.galaxyMap.querySelector(`Button[Name='button${draggingPlanet.name}']`);
-    if (button) {
-      button.setAttribute('Location', draggingPlanet.location);
-    }
-  }
-
-  renderPreview();
-  renderPlanets();
+    planet.buttons.forEach(btn => {
+        btn.x += dx;
+        btn.y += dy;
+    });
 }
 
-function onCanvasMouseUp() {
-  draggingPlanet = null;
+// -----------------------------------------------------------------------------
+// Tables
+// -----------------------------------------------------------------------------
+
+const planetTableBody = document.querySelector("#planetTable tbody");
+const buttonTableBody = document.querySelector("#buttonTable tbody");
+
+function renderTables() {
+    planetTableBody.innerHTML = "";
+    planets.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.name}</td><td>${p.x|0}</td><td>${p.y|0}</td>`;
+        planetTableBody.appendChild(tr);
+    });
+
+    buttonTableBody.innerHTML = "";
+    buttons.forEach(b => {
+        const parent = planets.find(p => p.id === b.parentPlanetId);
+        const parentName = parent ? parent.name : "(none)";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${b.label}</td><td>${parentName}</td><td>${b.x|0}</td><td>${b.y|0}</td>`;
+        buttonTableBody.appendChild(tr);
+    });
 }
