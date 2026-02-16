@@ -1,50 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SWG .inc UI Editor</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <title>SWG Galaxy Map Editor</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>SWG UI .inc Editor</h1>
+    <div id="app">
+        <div id="left-panel">
+            <canvas id="mapCanvas" width="512" height="512"></canvas>
+        </div>
 
-  <section>
-    <h2>Load .inc file</h2>
-    <input type="file" id="fileInput" accept=".inc,.txt">
-    <br><br>
-    <textarea id="rawInput" rows="10" cols="100" placeholder="Or paste .inc content here"></textarea>
-    <br>
-    <button id="parseBtn">Parse</button>
-  </section>
+        <div id="right-panel">
+            <h2>Planets</h2>
+            <table id="planetTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>X</th>
+                        <th>Y</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
 
-  <section>
-    <h2>Planets</h2>
-    <div id="planetsContainer"></div>
-    <button id="addPlanetBtn">Add Planet</button>
-  </section>
+            <h2>Buttons</h2>
+            <table id="buttonTable">
+                <thead>
+                    <tr>
+                        <th>Label</th>
+                        <th>Parent Planet</th>
+                        <th>X</th>
+                        <th>Y</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
 
-  <section>
-    <h2>GalaxyMap Buttons</h2>
-    <div id="buttonsContainer"></div>
-  </section>
-
-  <section>
-    <h2>CodeData</h2>
-    <div id="codeDataContainer"></div>
-  </section>
-
-  <section>
-    <h2>Coordinate Preview</h2>
-    <canvas id="previewCanvas" width="500" height="500"></canvas>
-  </section>
-
-  <section>
-    <h2>Export</h2>
-    <button id="exportBtn">Generate .inc</button>
-    <br><br>
-    <textarea id="output" rows="10" cols="100" placeholder="Modified .inc will appear here"></textarea>
-  </section>
-
-  <script src="Load.js"></script>
+    <script src="editor.js"></script>
 </body>
 </html>
