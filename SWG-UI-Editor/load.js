@@ -1,10 +1,9 @@
 // ============================================================================
-// SWG GALAXY MAP EDITOR — load.js
+// SWG GALAXY MAP EDITOR — REGEX-BASED PARSER (NO XML)
 // ============================================================================
 
 let planets = [];
 let buttons = [];
-
 let nextId = 1;
 const genId = () => nextId++;
 
@@ -26,51 +25,32 @@ document.getElementById("parseBtn").addEventListener("click", async () => {
     render();
 });
 
-// -----------------------------------------------------------------------------
-// REAL SWG .inc PARSER (SAFE VERSION)
-// -----------------------------------------------------------------------------
+// ============================================================================
+// REGEX PARSER — WORKS WITH REAL SWG .INC FILES
+// ============================================================================
 
-function parseInc(incText) {
+function parseInc(text) {
     planets = [];
     buttons = [];
 
-    let xmlText = incText;
+    // Remove SWG comments
+    text = text.replace(/\/\/.*$/gm, "");
+    text = text.replace(/\/\*[\s\S]*?\*\//gm, "");
 
-    // Remove SWG-style comments: // comment
-    xmlText = xmlText.replace(/\/\/.*$/gm, "");
+    // ---------------------------------------------------------
+    // 1. Extract PLANET LABELS from <Text Name='Tatooine' Location='X,Y'>
+    // ---------------------------------------------------------
 
-    // Remove C-style comments: /* ... */
-    xmlText = xmlText.replace(/\/\*[\s\S]*?\*\//gm, "");
+    const planetLabelRegex = /<Text[^>]*Name=['"]([^'"]+)['"][^>]*Location=['"](\d+),(\d+)['"][^>]*>/gi;
 
-    // DO NOT auto-close tags — this breaks SWG files
+    let match;
+    while ((match = planetLabelRegex.exec(text)) !== null) {
+        const name = match[1];
+        const x = parseFloat(match[2]);
+        const y = parseFloat(match[3]);
 
-    // Wrap in root
-    xmlText = `<Root>${xmlText}</Root>`;
-
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, "text/xml");
-
-    const parseError = xml.querySelector("parsererror");
-    if (parseError) {
-        console.error("XML Parse Error:", parseError.textContent);
-        alert("Failed to parse .inc file. Check console for details.");
-        return;
-    }
-
-    // ---------------- PLANETS ----------------
-    const windows = [...xml.getElementsByTagName("Window")];
-
-    windows.forEach(win => {
-        const name = win.getAttribute("Name");
-        if (!name) return;
-
-        if (!name.toLowerCase().includes("planet")) return;
-
-        const loc = win.querySelector("Location");
-        if (!loc) return;
-
-        const x = parseFloat(loc.getAttribute("X")) || 0;
-        const y = parseFloat(loc.getAttribute("Y")) || 0;
+        // Only treat known planet names as planets
+        if (!isPlanetName(name)) continue;
 
         planets.push({
             id: genId(),
@@ -81,49 +61,59 @@ function parseInc(incText) {
             color: "#7fd4ff",
             buttons: []
         });
-    });
+    }
 
-    // ---------------- BUTTONS ----------------
-    const btnNodes = [...xml.getElementsByTagName("Button")];
+    // ---------------------------------------------------------
+    // 2. Extract BUTTONS from <Button Name='buttonTatooine' Location='X,Y'>
+    // ---------------------------------------------------------
 
-    btnNodes.forEach(btn => {
-        const name = btn.getAttribute("Name") || "Button";
+    const buttonRegex = /<Button[^>]*Name=['"]([^'"]+)['"][^>]*Location=['"](\d+),(\d+)['"][^>]*>/gi;
 
-        const loc = btn.querySelector("Location");
-        if (!loc) return;
-
-        const x = parseFloat(loc.getAttribute("X")) || 0;
-        const y = parseFloat(loc.getAttribute("Y")) || 0;
-        const w = parseFloat(loc.getAttribute("Width")) || 80;
-        const h = parseFloat(loc.getAttribute("Height")) || 16;
-
-        let parentPlanet = planets.find(p =>
-            name.toLowerCase().includes(
-                p.name.toLowerCase().replace("planet_", "")
-            )
-        );
+    while ((match = buttonRegex.exec(text)) !== null) {
+        const name = match[1];
+        const x = parseFloat(match[2]);
+        const y = parseFloat(match[3]);
 
         const buttonObj = {
             id: genId(),
             label: name,
             x,
             y,
-            width: w,
-            height: h,
-            parentPlanetId: parentPlanet ? parentPlanet.id : null
+            width: 80,
+            height: 16,
+            parentPlanetId: null
         };
 
-        buttons.push(buttonObj);
+        // Try to link button to a planet
+        const lower = name.toLowerCase();
+        const parent = planets.find(p => lower.includes(p.name.toLowerCase()));
 
-        if (parentPlanet) {
-            parentPlanet.buttons.push(buttonObj);
+        if (parent) {
+            buttonObj.parentPlanetId = parent.id;
+            parent.buttons.push(buttonObj);
         }
-    });
+
+        buttons.push(buttonObj);
+    }
 }
 
 // -----------------------------------------------------------------------------
-// Canvas + Rendering
+// Helper: Identify planet names
 // -----------------------------------------------------------------------------
+
+function isPlanetName(name) {
+    const knownPlanets = [
+        "Corellia","Dantooine","Dathomir","Endor","Lok","Dungeon2","Naboo",
+        "Rori","Talus","Hoth","Taanab","Mandalore","Tatooine","Chandrila",
+        "Kaas","Coruscant","Moraband","Jakku","Yavin4"
+    ];
+
+    return knownPlanets.includes(name);
+}
+
+// ============================================================================
+// RENDERING
+// ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
 const ctx = canvas.getContext("2d");
@@ -138,7 +128,6 @@ function drawPlanet(p) {
     ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     ctx.fill();
-
     ctx.strokeStyle = "#fff";
     ctx.stroke();
 
@@ -151,7 +140,6 @@ function drawPlanet(p) {
 function drawButton(b) {
     ctx.fillStyle = "#1b2438";
     ctx.fillRect(b.x, b.y, b.width, b.height);
-
     ctx.strokeStyle = "#4a5a8a";
     ctx.strokeRect(b.x, b.y, b.width, b.height);
 
@@ -170,9 +158,9 @@ function render() {
     renderTables();
 }
 
-// -----------------------------------------------------------------------------
-// Dragging
-// -----------------------------------------------------------------------------
+// ============================================================================
+// DRAGGING
+// ============================================================================
 
 let drag = { active: false, planet: null, offsetX: 0, offsetY: 0 };
 
@@ -225,9 +213,9 @@ function movePlanet(planet, newX, newY) {
     });
 }
 
-// -----------------------------------------------------------------------------
-// Tables
-// -----------------------------------------------------------------------------
+// ============================================================================
+// TABLES
+// ============================================================================
 
 const planetTableBody = document.querySelector("#planetTable tbody");
 const buttonTableBody = document.querySelector("#buttonTable tbody");
