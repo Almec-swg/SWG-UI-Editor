@@ -1,6 +1,14 @@
 // ============================================================================
-// SWG Galaxy Map Editor — SWG-aware sanitizer + DDS background + dragging + DataSource editor
+// SWG Galaxy Map Editor — SWG-aware sanitizer + DDS background + dragging +
+// DataSource editor + SWG Layout Engine integration
 // ============================================================================
+
+// These globals come from swgLayoutEngine.js
+// window.computeElementLayout
+// window.parseLocation
+// window.parseSize
+// window.parsePackLocation
+// window.parsePackSize
 
 let xmlDoc = null;
 let planets = [];
@@ -20,18 +28,14 @@ function sanitizeInc(text) {
   out = out.replace(/&(?![a-zA-Z]+;)/g, "&amp;");
 
   // 2. Escape @ui: tokens inside text nodes
-  //    @ is not valid in XML entity context, so we convert it to &#64;
   out = out.replace(/>@ui:/g, ">&#64;ui:");
 
   // 3. Convert illegal attribute names with dots into XML-safe names
-  //    Example: foo.bar="x" → foo_bar="x"
-  //    Case is preserved exactly.
   out = out.replace(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)=/g, "$1_$2=");
 
   // 4. Wrap in a root element so DOMParser accepts the fragment
   return `<Root>${out}</Root>`;
 }
-
 
 // ============================================================================
 // UI wiring
@@ -92,10 +96,10 @@ function handleExport() {
   // Remove <Root> wrapper
   output = output.replace(/^<Root>/, "").replace(/<\/Root>$/, "");
 
-  // Restore SWG-style dotted attributes (case preserved)
+  // Restore SWG-style dotted attributes
   output = output.replace(/([A-Za-z0-9_]+)_([A-Za-z0-9_]+)=/g, "$1.$2=");
 
-  // Restore @ui: tokens
+  // Restore @ui:
   output = output.replace(/&#64;ui:/g, "@ui:");
 
   const outEl = document.getElementById("output");
@@ -124,7 +128,30 @@ function getMapSections() {
 }
 
 // ============================================================================
-// Planets model
+// SWG Layout Wrapper
+// ============================================================================
+
+const mapParentLayout = {
+  x: 0,
+  y: 0,
+  width: 501,
+  height: 486
+};
+
+function computeSWGPosition(node) {
+  return window.computeElementLayout({
+    name: node.getAttribute("Name"),
+    location: window.parseLocation(node.getAttribute("Location")),
+    size: window.parseSize(node.getAttribute("Size")),
+    scrollExtent: window.parseSize(node.getAttribute("ScrollExtent")),
+    packLocation: window.parsePackLocation(node.getAttribute("PackLocation")),
+    packSize: window.parsePackSize(node.getAttribute("PackSize")),
+    parent: mapParentLayout
+  });
+}
+
+// ============================================================================
+// Planets model (SWG-accurate positions)
 // ============================================================================
 
 function buildPlanetsModel() {
@@ -140,23 +167,22 @@ function buildPlanetsModel() {
 
   labels.forEach(label => {
     const name = label.getAttribute("Name");
-    const loc = label.getAttribute("Location") || "0,0";
-
     const page = pages.find(p => p.getAttribute("Name") === name);
-    let sourceResource = "";
 
+    let sourceResource = "";
     if (page) {
       const img = page.querySelector("Image");
       if (img) sourceResource = img.getAttribute("SourceResource") || "";
     }
 
-    const [x, y] = loc.split(",").map(Number);
+    // SWG-accurate layout
+    const layout = computeSWGPosition(label);
 
     planets.push({
       id: genId(),
       name,
-      x,
-      y,
+      x: layout.x,
+      y: layout.y,
       radius: 10,
       color: "#7fd4ff",
       labelNode: label,
@@ -168,7 +194,7 @@ function buildPlanetsModel() {
 }
 
 // ============================================================================
-// Buttons model (GalaxyMap buttons)
+// Buttons model (SWG-accurate positions)
 // ============================================================================
 
 function buildButtonsModel() {
@@ -182,16 +208,17 @@ function buildButtonsModel() {
 
   btnNodes.forEach(node => {
     const name = node.getAttribute("Name") || "Button";
-    const loc = node.getAttribute("Location") || "0,0";
-    const [x, y] = loc.split(",").map(Number);
+
+    // SWG-accurate layout
+    const layout = computeSWGPosition(node);
 
     const buttonObj = {
       id: genId(),
       label: name,
-      x,
-      y,
-      width: 80,
-      height: 16,
+      x: layout.x,
+      y: layout.y,
+      width: layout.width || 80,
+      height: layout.height || 16,
       node,
       parentPlanetId: null
     };
@@ -209,14 +236,13 @@ function buildButtonsModel() {
 }
 
 // ============================================================================
-// DataSource model (Namespace Name='data')
+// DataSource model
 // ============================================================================
 
 function buildDataSourcesModel() {
   dataSources = [];
   if (!xmlDoc) return;
 
-  // Your file uses inline DataSource, not Namespace Name='data', so we grab all DataSource nodes
   const dsNodes = Array.from(xmlDoc.querySelectorAll("DataSource"));
 
   dsNodes.forEach(ds => {
@@ -235,15 +261,13 @@ function buildDataSourcesModel() {
 }
 
 // ============================================================================
-// DDS decoder (BC1 / DXT1)
+// DDS decoder (unchanged)
 // ============================================================================
 
 function parseDDS(arrayBuffer) {
   const d = new DataView(arrayBuffer);
   const magic = d.getUint32(0, true);
-  if (magic !== 0x20534444) { // "DDS "
-    throw new Error("Not a DDS file");
-  }
+  if (magic !== 0x20534444) throw new Error("Not a DDS file");
 
   const height = d.getUint32(12, true);
   const width = d.getUint32(16, true);
@@ -251,10 +275,7 @@ function parseDDS(arrayBuffer) {
   const fourCC = d.getUint32(84, true);
 
   const DDPF_FOURCC = 0x4;
-
-  if (!(pfFlags & DDPF_FOURCC)) {
-    throw new Error("DDS is not FOURCC-compressed");
-  }
+  if (!(pfFlags & DDPF_FOURCC)) throw new Error("DDS is not FOURCC-compressed");
 
   const FOURCC_DXT1 =
     ("D".charCodeAt(0)) |
@@ -262,19 +283,13 @@ function parseDDS(arrayBuffer) {
     ("T".charCodeAt(0) << 16) |
     ("1".charCodeAt(0) << 24);
 
-  if (fourCC !== FOURCC_DXT1) {
-    throw new Error("Only DXT1/BC1 DDS supported");
-  }
+  if (fourCC !== FOURCC_DXT1) throw new Error("Only DXT1/BC1 DDS supported");
 
   const headerSize = 128;
   const dataOffset = headerSize;
   const byteArray = new Uint8Array(arrayBuffer, dataOffset);
 
-  return {
-    width,
-    height,
-    data: byteArray
-  };
+  return { width, height, data: byteArray };
 }
 
 function decodeDXT1(dds) {
@@ -358,7 +373,7 @@ function decodeDXT1(dds) {
 }
 
 // ============================================================================
-// Background loading (DDS) — Option B patch + flexible image detection
+// Background loading (DDS) — unchanged
 // ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
@@ -431,6 +446,7 @@ function drawBackground() {
     const octx = off.getContext("2d");
     octx.putImageData(bgImageData, 0, 0);
 
+    // Stretch to fill 512x512
     ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
   }
 }
@@ -561,14 +577,20 @@ function movePlanet(planet, newX, newY) {
   planet.y = newY;
 
   if (planet.labelNode) {
-    planet.labelNode.setAttribute("Location", `${Math.round(newX)},${Math.round(newY)}`);
+    // Convert canvas coords back to SWG coords
+    const swgX = Math.round(newX / (512 / 501));
+    const swgY = Math.round(newY / (512 / 486));
+    planet.labelNode.setAttribute("Location", `${swgX},${swgY}`);
   }
 
   planet.buttons.forEach(btn => {
     btn.x += dx;
     btn.y += dy;
+
     if (btn.node) {
-      btn.node.setAttribute("Location", `${Math.round(btn.x)},${Math.round(btn.y)}`);
+      const swgX = Math.round(btn.x / (512 / 501));
+      const swgY = Math.round(btn.y / (512 / 486));
+      btn.node.setAttribute("Location", `${swgX},${swgY}`);
     }
   });
 }
@@ -576,8 +598,11 @@ function movePlanet(planet, newX, newY) {
 function moveButton(button, newX, newY) {
   button.x = newX;
   button.y = newY;
+
   if (button.node) {
-    button.node.setAttribute("Location", `${Math.round(newX)},${Math.round(newY)}`);
+    const swgX = Math.round(newX / (512 / 501));
+    const swgY = Math.round(newY / (512 / 486));
+    button.node.setAttribute("Location", `${swgX},${swgY}`);
   }
 }
 
