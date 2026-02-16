@@ -213,7 +213,6 @@ function parseDDS(arrayBuffer) {
 
   const height = d.getUint32(12, true);
   const width = d.getUint32(16, true);
-  const mipMapCount = d.getUint32(28, true);
   const pfFlags = d.getUint32(80, true);
   const fourCC = d.getUint32(84, true);
 
@@ -325,7 +324,7 @@ function decodeDXT1(dds) {
 }
 
 // ============================================================================
-// Background loading (DDS) — Option B patch
+// Background loading (DDS) — Option B patch + FIXED IMAGE DETECTION
 // ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
@@ -345,10 +344,16 @@ async function loadBackground() {
     const sections = getMapSections();
     if (!sections) return;
 
-    // Only load the galaxy background image
     let imgNode = null;
+
+    // Try the expected name first
     if (sections.galaxyMap) {
       imgNode = sections.galaxyMap.querySelector("Image[Name='imageGalaxy']");
+    }
+
+    // If not found, fall back to ANY image inside GalaxyMap
+    if (!imgNode && sections.galaxyMap) {
+      imgNode = sections.galaxyMap.querySelector("Image");
     }
 
     if (!imgNode) {
@@ -543,7 +548,6 @@ function moveButton(button, newX, newY) {
     button.node.setAttribute("Location", `${Math.round(newX)},${Math.round(newY)}`);
   }
 }
-
 // ============================================================================
 // Tables (planets + buttons)
 // ============================================================================
@@ -574,4 +578,35 @@ function renderTables() {
 }
 
 // ============================================================================
-// DataSource table (appearance
+// DataSource table (appearanceTemplate editor)
+// ============================================================================
+
+const dataSourceTableBody = document.querySelector("#dataSourceTable tbody");
+
+function renderDataSourcesTable() {
+  if (!dataSourceTableBody) return;
+
+  dataSourceTableBody.innerHTML = "";
+
+  dataSources.forEach(ds => {
+    const tr = document.createElement("tr");
+
+    const nameTd = document.createElement("td");
+    nameTd.textContent = ds.name;
+    tr.appendChild(nameTd);
+
+    const appTd = document.createElement("td");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = ds.appearanceTemplate;
+    input.addEventListener("change", () => {
+      ds.appearanceTemplate = input.value;
+      ds.dataNode.setAttribute("appearanceTemplate", input.value);
+    });
+    appTd.appendChild(input);
+    tr.appendChild(appTd);
+
+    dataSourceTableBody.appendChild(tr);
+  });
+}
+
