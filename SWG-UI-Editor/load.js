@@ -1,5 +1,17 @@
 let xmlDoc = null;
 
+let draggingPlanet = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+const canvas = document.getElementById('previewCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.addEventListener('mousedown', onCanvasMouseDown);
+canvas.addEventListener('mousemove', onCanvasMouseMove);
+canvas.addEventListener('mouseup', onCanvasMouseUp);
+canvas.addEventListener('mouseleave', onCanvasMouseUp);
+
 // Wire up UI events
 document.getElementById('fileInput').addEventListener('change', handleFileSelect);
 document.getElementById('parseBtn').addEventListener('click', handleParse);
@@ -334,9 +346,6 @@ function renderCodeData() {
 
 // Coordinate preview
 function renderPreview() {
-  const canvas = document.getElementById('previewCanvas');
-  const ctx = canvas.getContext('2d');
-
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -345,7 +354,7 @@ function renderPreview() {
   planets.forEach(p => {
     const [x, y] = p.location.split(',').map(Number);
 
-    ctx.fillStyle = '#00ff00';
+    ctx.fillStyle = (p === draggingPlanet) ? '#ffff00' : '#00ff00';
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, Math.PI * 2);
     ctx.fill();
@@ -353,4 +362,57 @@ function renderPreview() {
     ctx.fillStyle = '#0f0';
     ctx.fillText(p.name, x + 8, y + 4);
   });
+}
+
+// Dragging logic
+function onCanvasMouseDown(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const planets = getPlanetsModel();
+
+  for (const p of planets) {
+    const [x, y] = p.location.split(',').map(Number);
+
+    const dx = mouseX - x;
+    const dy = mouseY - y;
+
+    if (dx*dx + dy*dy <= 25) {
+      draggingPlanet = p;
+      dragOffsetX = mouseX - x;
+      dragOffsetY = mouseY - y;
+      return;
+    }
+  }
+}
+
+function onCanvasMouseMove(e) {
+  if (!draggingPlanet) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const newX = Math.round(mouseX - dragOffsetX);
+  const newY = Math.round(mouseY - dragOffsetY);
+
+  draggingPlanet.location = `${newX},${newY}`;
+  draggingPlanet.labelNode.setAttribute('Location', draggingPlanet.location);
+
+  // Sync GalaxyMap button if exists
+  const sections = getMapSections();
+  if (sections && sections.galaxyMap) {
+    const button = sections.galaxyMap.querySelector(`Button[Name='button${draggingPlanet.name}']`);
+    if (button) {
+      button.setAttribute('Location', draggingPlanet.location);
+    }
+  }
+
+  renderPreview();
+  renderPlanets();
+}
+
+function onCanvasMouseUp() {
+  draggingPlanet = null;
 }
