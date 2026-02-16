@@ -1,55 +1,103 @@
 // ============================================================================
-// SWG GALAXY MAP EDITOR — REGEX-BASED PARSER (NO XML)
+// SWG Galaxy Map Editor — DOM-based parser using ui_ticketpurchase.inc
 // ============================================================================
 
+let xmlDoc = null;
 let planets = [];
 let buttons = [];
 let nextId = 1;
 const genId = () => nextId++;
 
 // -----------------------------------------------------------------------------
-// Parse Button
+// Wire up UI
 // -----------------------------------------------------------------------------
 
-document.getElementById("parseBtn").addEventListener("click", async () => {
-    const fileInput = document.getElementById("fileInput");
-    const file = fileInput.files[0];
+document.getElementById("fileInput").addEventListener("change", handleFileSelect);
+document.getElementById("parseBtn").addEventListener("click", handleParse);
 
-    if (!file) {
+// Just store file text on selection
+let loadedText = "";
+
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        loadedText = ev.target.result;
+    };
+    reader.readAsText(file);
+}
+
+// -----------------------------------------------------------------------------
+// Parse button
+// -----------------------------------------------------------------------------
+
+function handleParse() {
+    if (!loadedText.trim()) {
         alert("Select a .inc file first.");
         return;
     }
 
-    const text = await file.text();
-    parseInc(text);
+    const parser = new DOMParser();
+    xmlDoc = parser.parseFromString(loadedText, "text/xml");
+
+    // Build models
+    buildPlanetsModel();
+    buildButtonsModel();
+
     render();
-});
+}
 
-// ============================================================================
-// REGEX PARSER — WORKS WITH REAL SWG .INC FILES
-// ============================================================================
+// -----------------------------------------------------------------------------
+// Map sections (same logic as old working version)
+// -----------------------------------------------------------------------------
 
-function parseInc(text) {
+function getMapSections() {
+    if (!xmlDoc) return null;
+
+    const ticketPurchase = xmlDoc.querySelector("Page[Name='TicketPurchase'] Page[Name='ticketPurchase']");
+    if (!ticketPurchase) return null;
+
+    const map = ticketPurchase.querySelector("Page[Name='map']");
+    if (!map) return null;
+
+    return {
+        map,
+        planetNames: map.querySelector("Page[Name='PlanetNames']"),
+        planetsPage: map.querySelector("Page[Name='Planets']"),
+        galaxyMap: map.querySelector("Page[Name='GalaxyMap']")
+    };
+}
+
+// -----------------------------------------------------------------------------
+// Build planets model (from PlanetNames Text nodes)
+// -----------------------------------------------------------------------------
+
+function buildPlanetsModel() {
     planets = [];
-    buttons = [];
 
-    // Strip comments
-    text = text.replace(/\/\/.*$/gm, "");
-    text = text.replace(/\/\*[\s\S]*?\*\//gm, "");
+    const sections = getMapSections();
+    if (!sections || !sections.planetNames) return;
 
-    // ---------------------------------------------------------
-    // 1. PLANETS from <Text ... Name='X' ... Location='x,y'>
-    //    (e.g. inside Page Name='PlanetNames')
-    // ---------------------------------------------------------
+    const { planetNames, planetsPage } = sections;
 
-    const planetLabelRegex =
-        /<Text[\s\S]*?Name=['"]([^'"]+)['"][\s\S]*?Location=['"](\d+),(\d+)['"][\s\S]*?>/gi;
+    const labels = Array.from(planetNames.querySelectorAll("Text"));
+    const pages = planetsPage ? Array.from(planetsPage.querySelectorAll(":scope > Page")) : [];
 
-    let match;
-    while ((match = planetLabelRegex.exec(text)) !== null) {
-        const name = match[1];
-        const x = parseFloat(match[2]);
-        const y = parseFloat(match[3]);
+    labels.forEach(label => {
+        const name = label.getAttribute("Name");
+        const loc = label.getAttribute("Location") || "0,0";
+
+        const page = pages.find(p => p.getAttribute("Name") === name);
+        let sourceResource = "";
+
+        if (page) {
+            const img = page.querySelector("Image");
+            if (img) sourceResource = img.getAttribute("SourceResource") || "";
+        }
+
+        const [x, y] = loc.split(",").map(Number);
 
         planets.push({
             id: genId(),
@@ -58,21 +106,31 @@ function parseInc(text) {
             y,
             radius: 10,
             color: "#7fd4ff",
+            labelNode: label,
+            pageNode: page || null,
+            sourceResource,
             buttons: []
         });
-    }
+    });
+}
 
-    // ---------------------------------------------------------
-    // 2. BUTTONS from <Button ... Name='X' ... Location='x,y'>
-    // ---------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Build buttons model (from GalaxyMap buttons)
+// -----------------------------------------------------------------------------
 
-    const buttonRegex =
-        /<Button[\s\S]*?Name=['"]([^'"]+)['"][\s\S]*?Location=['"](\d+),(\d+)['"][\s\S]*?>/gi;
+function buildButtonsModel() {
+    buttons = [];
 
-    while ((match = buttonRegex.exec(text)) !== null) {
-        const name = match[1];
-        const x = parseFloat(match[2]);
-        const y = parseFloat(match[3]);
+    const sections = getMapSections();
+    if (!sections || !sections.galaxyMap) return;
+
+    const { galaxyMap } = sections;
+    const btnNodes = Array.from(galaxyMap.querySelectorAll("Button"));
+
+    btnNodes.forEach(node => {
+        const name = node.getAttribute("Name") || "Button";
+        const loc = node.getAttribute("Location") || "0,0";
+        const [x, y] = loc.split(",").map(Number);
 
         const buttonObj = {
             id: genId(),
@@ -81,10 +139,11 @@ function parseInc(text) {
             y,
             width: 80,
             height: 16,
+            node,
             parentPlanetId: null
         };
 
-        // Try to link button to a planet by name substring
+        // Try to link to a planet by name substring
         const lower = name.toLowerCase();
         const parent = planets.find(p => lower.includes(p.name.toLowerCase()));
 
@@ -94,11 +153,11 @@ function parseInc(text) {
         }
 
         buttons.push(buttonObj);
-    }
+    });
 }
 
 // ============================================================================
-// RENDERING
+// Canvas + Rendering
 // ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
@@ -145,7 +204,7 @@ function render() {
 }
 
 // ============================================================================
-// DRAGGING
+// Dragging planets (and updating XML)
 // ============================================================================
 
 let drag = { active: false, planet: null, offsetX: 0, offsetY: 0 };
@@ -193,14 +252,23 @@ function movePlanet(planet, newX, newY) {
     planet.x = newX;
     planet.y = newY;
 
+    // Update label Location in XML
+    if (planet.labelNode) {
+        planet.labelNode.setAttribute("Location", `${Math.round(newX)},${Math.round(newY)}`);
+    }
+
+    // Move attached buttons visually and update their XML Location
     planet.buttons.forEach(btn => {
         btn.x += dx;
         btn.y += dy;
+        if (btn.node) {
+            btn.node.setAttribute("Location", `${Math.round(btn.x)},${Math.round(btn.y)}`);
+        }
     });
 }
 
 // ============================================================================
-// TABLES
+// Tables
 // ============================================================================
 
 const planetTableBody = document.querySelector("#planetTable tbody");
@@ -210,7 +278,7 @@ function renderTables() {
     planetTableBody.innerHTML = "";
     planets.forEach(p => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${p.name}</td><td>${p.x|0}</td><td>${p.y|0}</td>`;
+        tr.innerHTML = `<td>${p.name}</td><td>${p.x | 0}</td><td>${p.y | 0}</td>`;
         planetTableBody.appendChild(tr);
     });
 
@@ -219,7 +287,7 @@ function renderTables() {
         const parent = planets.find(p => p.id === b.parentPlanetId);
         const parentName = parent ? parent.name : "(none)";
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${b.label}</td><td>${parentName}</td><td>${b.x|0}</td><td>${b.y|0}</td>`;
+        tr.innerHTML = `<td>${b.label}</td><td>${parentName}</td><td>${b.x | 0}</td><td>${b.y | 0}</td>`;
         buttonTableBody.appendChild(tr);
     });
 }
