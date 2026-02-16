@@ -1,45 +1,124 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>SWG Galaxy Map Editor</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>SWG Galaxy Map Editor</title>
+  <style>
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: system-ui, sans-serif;
+      margin: 20px;
+    }
+
+    h1, h2 {
+      color: #58a6ff;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      width: 100%;
+      background: #161b22;
+    }
+
+    th, td {
+      border: 1px solid #30363d;
+      padding: 6px 10px;
+    }
+
+    th {
+      background: #21262d;
+      color: #79c0ff;
+    }
+
+    input[type="text"] {
+      width: 95%;
+      background: #0d1117;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      padding: 4px;
+    }
+
+    #mapCanvas {
+      border: 1px solid #30363d;
+      background: black;
+      margin-bottom: 20px;
+    }
+
+    #output {
+      width: 100%;
+      height: 200px;
+      background: #0d1117;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      padding: 10px;
+    }
+
+    button {
+      background: #238636;
+      border: none;
+      padding: 8px 14px;
+      color: white;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background: #2ea043;
+    }
+  </style>
 </head>
 <body>
 
-<div id="app">
+  <h1>SWG Galaxy Map Editor</h1>
 
-    <!-- LEFT PANEL -->
-    <div id="left-panel">
-        <canvas id="mapCanvas" width="512" height="512"></canvas>
+  <input type="file" id="fileInput" accept=".inc">
+  <button id="parseBtn">Parse</button>
+  <button id="exportBtn">Export XML</button>
 
-        <input type="file" id="fileInput" accept=".inc,.xml">
-        <button id="parseBtn">Parse .inc</button>
-    </div>
+  <h2>Galaxy Map</h2>
+  <canvas id="mapCanvas" width="512" height="512"></canvas>
 
-    <!-- RIGHT PANEL -->
-    <div id="right-panel">
+  <h2>PLANETS</h2>
+  <table id="planetTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>X</th>
+        <th>Y</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-        <h2>Planets</h2>
-        <table id="planetTable">
-            <thead>
-                <tr><th>Name</th><th>X</th><th>Y</th></tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+  <h2>BUTTONS</h2>
+  <table id="buttonTable">
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Planet</th>
+        <th>X</th>
+        <th>Y</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-        <h2>Buttons</h2>
-        <table id="buttonTable">
-            <thead>
-                <tr><th>Label</th><th>Parent</th><th>X</th><th>Y</th></tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+  <h2>DATASOURCES</h2>
+  <table id="dataSourceTable">
+    <thead>
+      <tr>
+        <th>Planet</th>
+        <th>appearanceTemplate</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-    </div>
+  <h2>Exported XML</h2>
+  <textarea id="output"></textarea>
 
-</div>
-
-<script src="load.js"></script>
+  <script src="load.js"></script>
 </body>
 </html>
