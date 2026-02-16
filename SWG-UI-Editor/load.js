@@ -1,12 +1,6 @@
 // ============================================================================
 // SWG GALAXY MAP EDITOR — load.js
-// Loads .inc files, parses SWG UI XML, renders planets + buttons,
-// and maintains parent–child movement.
 // ============================================================================
-
-// -----------------------------------------------------------------------------
-// Data Model
-// -----------------------------------------------------------------------------
 
 let planets = [];
 let buttons = [];
@@ -15,7 +9,7 @@ let nextId = 1;
 const genId = () => nextId++;
 
 // -----------------------------------------------------------------------------
-// Parse Button Listener
+// Parse Button
 // -----------------------------------------------------------------------------
 
 document.getElementById("parseBtn").addEventListener("click", async () => {
@@ -33,16 +27,12 @@ document.getElementById("parseBtn").addEventListener("click", async () => {
 });
 
 // -----------------------------------------------------------------------------
-// REAL SWG .inc PARSER
+// REAL SWG .inc PARSER (SAFE VERSION)
 // -----------------------------------------------------------------------------
 
 function parseInc(incText) {
     planets = [];
     buttons = [];
-
-    // ---------------------------------------------------------
-    // 1. Clean the .inc file so the browser can parse it
-    // ---------------------------------------------------------
 
     let xmlText = incText;
 
@@ -52,19 +42,10 @@ function parseInc(incText) {
     // Remove C-style comments: /* ... */
     xmlText = xmlText.replace(/\/\*[\s\S]*?\*\//gm, "");
 
-    // Fix missing closing tags by auto-closing simple tags
-    xmlText = xmlText.replace(/<(\w+)([^>]*)>/g, (match, tag, attrs) => {
-        if (match.endsWith("/>")) return match; // already self-closing
-        if (match.includes("</")) return match; // already closed
-        return `<${tag}${attrs}></${tag}>`;
-    });
+    // DO NOT auto-close tags — this breaks SWG files
 
-    // Wrap in a root node so DOMParser doesn't choke
+    // Wrap in root
     xmlText = `<Root>${xmlText}</Root>`;
-
-    // ---------------------------------------------------------
-    // 2. Parse using DOMParser
-    // ---------------------------------------------------------
 
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlText, "text/xml");
@@ -76,17 +57,13 @@ function parseInc(incText) {
         return;
     }
 
-    // ---------------------------------------------------------
-    // 3. Extract Windows (Planets)
-    // ---------------------------------------------------------
-
+    // ---------------- PLANETS ----------------
     const windows = [...xml.getElementsByTagName("Window")];
 
     windows.forEach(win => {
         const name = win.getAttribute("Name");
         if (!name) return;
 
-        // Detect planets by naming convention
         if (!name.toLowerCase().includes("planet")) return;
 
         const loc = win.querySelector("Location");
@@ -106,10 +83,7 @@ function parseInc(incText) {
         });
     });
 
-    // ---------------------------------------------------------
-    // 4. Extract Buttons
-    // ---------------------------------------------------------
-
+    // ---------------- BUTTONS ----------------
     const btnNodes = [...xml.getElementsByTagName("Button")];
 
     btnNodes.forEach(btn => {
@@ -123,7 +97,6 @@ function parseInc(incText) {
         const w = parseFloat(loc.getAttribute("Width")) || 80;
         const h = parseFloat(loc.getAttribute("Height")) || 16;
 
-        // Try to detect parent planet by name
         let parentPlanet = planets.find(p =>
             name.toLowerCase().includes(
                 p.name.toLowerCase().replace("planet_", "")
@@ -198,7 +171,7 @@ function render() {
 }
 
 // -----------------------------------------------------------------------------
-// Dragging Logic
+// Dragging
 // -----------------------------------------------------------------------------
 
 let drag = { active: false, planet: null, offsetX: 0, offsetY: 0 };
@@ -246,7 +219,6 @@ function movePlanet(planet, newX, newY) {
     planet.x = newX;
     planet.y = newY;
 
-    // Move all attached buttons
     planet.buttons.forEach(btn => {
         btn.x += dx;
         btn.y += dy;
