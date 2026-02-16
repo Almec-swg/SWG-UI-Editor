@@ -33,24 +33,23 @@ function parseInc(text) {
     planets = [];
     buttons = [];
 
-    // Remove SWG comments
+    // Strip comments
     text = text.replace(/\/\/.*$/gm, "");
     text = text.replace(/\/\*[\s\S]*?\*\//gm, "");
 
     // ---------------------------------------------------------
-    // 1. Extract PLANET LABELS from <Text Name='Tatooine' Location='X,Y'>
+    // 1. PLANETS from <Text ... Name='X' ... Location='x,y'>
+    //    (e.g. inside Page Name='PlanetNames')
     // ---------------------------------------------------------
 
-    const planetLabelRegex = /<Text[^>]*Name=['"]([^'"]+)['"][^>]*Location=['"](\d+),(\d+)['"][^>]*>/gi;
+    const planetLabelRegex =
+        /<Text[\s\S]*?Name=['"]([^'"]+)['"][\s\S]*?Location=['"](\d+),(\d+)['"][\s\S]*?>/gi;
 
     let match;
     while ((match = planetLabelRegex.exec(text)) !== null) {
         const name = match[1];
         const x = parseFloat(match[2]);
         const y = parseFloat(match[3]);
-
-        // Only treat known planet names as planets
-        if (!isPlanetName(name)) continue;
 
         planets.push({
             id: genId(),
@@ -64,10 +63,11 @@ function parseInc(text) {
     }
 
     // ---------------------------------------------------------
-    // 2. Extract BUTTONS from <Button Name='buttonTatooine' Location='X,Y'>
+    // 2. BUTTONS from <Button ... Name='X' ... Location='x,y'>
     // ---------------------------------------------------------
 
-    const buttonRegex = /<Button[^>]*Name=['"]([^'"]+)['"][^>]*Location=['"](\d+),(\d+)['"][^>]*>/gi;
+    const buttonRegex =
+        /<Button[\s\S]*?Name=['"]([^'"]+)['"][\s\S]*?Location=['"](\d+),(\d+)['"][\s\S]*?>/gi;
 
     while ((match = buttonRegex.exec(text)) !== null) {
         const name = match[1];
@@ -84,7 +84,7 @@ function parseInc(text) {
             parentPlanetId: null
         };
 
-        // Try to link button to a planet
+        // Try to link button to a planet by name substring
         const lower = name.toLowerCase();
         const parent = planets.find(p => lower.includes(p.name.toLowerCase()));
 
@@ -95,20 +95,6 @@ function parseInc(text) {
 
         buttons.push(buttonObj);
     }
-}
-
-// -----------------------------------------------------------------------------
-// Helper: Identify planet names
-// -----------------------------------------------------------------------------
-
-function isPlanetName(name) {
-    const knownPlanets = [
-        "Corellia","Dantooine","Dathomir","Endor","Lok","Dungeon2","Naboo",
-        "Rori","Talus","Hoth","Taanab","Mandalore","Tatooine","Chandrila",
-        "Kaas","Coruscant","Moraband","Jakku","Yavin4"
-    ];
-
-    return knownPlanets.includes(name);
 }
 
 // ============================================================================
