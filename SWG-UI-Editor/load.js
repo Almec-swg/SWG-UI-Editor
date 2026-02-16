@@ -30,6 +30,9 @@ function handleParse() {
   xmlDoc = parser.parseFromString(text, 'text/xml');
 
   renderPlanets();
+  renderButtons();
+  renderCodeData();
+  renderPreview();
 }
 
 // Export XML
@@ -55,8 +58,10 @@ function getMapSections() {
   if (!map) return null;
 
   return {
+    map,
     planetNames: map.querySelector("Page[Name='PlanetNames']"),
-    planets: map.querySelector("Page[Name='Planets']")
+    planets: map.querySelector("Page[Name='Planets']"),
+    galaxyMap: map.querySelector("Page[Name='GalaxyMap']")
   };
 }
 
@@ -117,12 +122,10 @@ function renderPlanets() {
   planets.forEach(planet => {
     const row = document.createElement('tr');
 
-    // Name
     const nameCell = document.createElement('td');
     nameCell.textContent = planet.name;
     row.appendChild(nameCell);
 
-    // Label Location
     const locCell = document.createElement('td');
     const locInput = document.createElement('input');
     locInput.value = planet.location;
@@ -130,11 +133,11 @@ function renderPlanets() {
     locInput.addEventListener('change', () => {
       planet.location = locInput.value;
       planet.labelNode.setAttribute('Location', locInput.value);
+      renderPreview();
     });
     locCell.appendChild(locInput);
     row.appendChild(locCell);
 
-    // Map Resource
     const resCell = document.createElement('td');
     const resInput = document.createElement('input');
     resInput.value = planet.sourceResource;
@@ -206,4 +209,148 @@ function handleAddPlanet() {
   planetNames.appendChild(label);
 
   renderPlanets();
+  renderPreview();
+}
+
+// Extract GalaxyMap buttons
+function getGalaxyButtons() {
+  const sections = getMapSections();
+  if (!sections) return [];
+
+  const { galaxyMap } = sections;
+  if (!galaxyMap) return [];
+
+  const buttons = Array.from(galaxyMap.querySelectorAll("Button"));
+
+  return buttons.map(btn => ({
+    name: btn.getAttribute('Name'),
+    node: btn,
+    location: btn.getAttribute('Location') || '0,0'
+  }));
+}
+
+// Render GalaxyMap button table
+function renderButtons() {
+  const container = document.getElementById('buttonsContainer');
+  container.innerHTML = '';
+
+  const buttons = getGalaxyButtons();
+  if (!buttons.length) {
+    container.textContent = 'No GalaxyMap buttons found.';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.border = '1';
+
+  const header = document.createElement('tr');
+  header.innerHTML = `
+    <th>Name</th>
+    <th>Location</th>
+  `;
+  table.appendChild(header);
+
+  buttons.forEach(btn => {
+    const row = document.createElement('tr');
+
+    const nameCell = document.createElement('td');
+    nameCell.textContent = btn.name;
+    row.appendChild(nameCell);
+
+    const locCell = document.createElement('td');
+    const locInput = document.createElement('input');
+    locInput.value = btn.location;
+    locInput.size = 10;
+    locInput.addEventListener('change', () => {
+      btn.location = locInput.value;
+      btn.node.setAttribute('Location', locInput.value);
+    });
+    locCell.appendChild(locInput);
+    row.appendChild(locCell);
+
+    table.appendChild(row);
+  });
+
+  container.appendChild(table);
+}
+
+// Extract CodeData
+function getCodeData() {
+  const codeData = xmlDoc.querySelector("Data[Name='CodeData']");
+  if (!codeData) return [];
+
+  const attributes = Array.from(codeData.attributes);
+
+  return attributes.map(attr => ({
+    key: attr.name,
+    value: attr.value,
+    node: codeData
+  }));
+}
+
+// Render CodeData table
+function renderCodeData() {
+  const container = document.getElementById('codeDataContainer');
+  container.innerHTML = '';
+
+  const entries = getCodeData();
+  if (!entries.length) {
+    container.textContent = 'No CodeData found.';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.border = '1';
+
+  const header = document.createElement('tr');
+  header.innerHTML = `
+    <th>Key</th>
+    <th>Value</th>
+  `;
+  table.appendChild(header);
+
+  entries.forEach(entry => {
+    const row = document.createElement('tr');
+
+    const keyCell = document.createElement('td');
+    keyCell.textContent = entry.key;
+    row.appendChild(keyCell);
+
+    const valCell = document.createElement('td');
+    const valInput = document.createElement('input');
+    valInput.value = entry.value;
+    valInput.size = 40;
+    valInput.addEventListener('change', () => {
+      entry.node.setAttribute(entry.key, valInput.value);
+    });
+    valCell.appendChild(valInput);
+    row.appendChild(valCell);
+
+    table.appendChild(row);
+  });
+
+  container.appendChild(table);
+}
+
+// Coordinate preview
+function renderPreview() {
+  const canvas = document.getElementById('previewCanvas');
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const planets = getPlanetsModel();
+
+  planets.forEach(p => {
+    const [x, y] = p.location.split(',').map(Number);
+
+    ctx.fillStyle = '#00ff00';
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#0f0';
+    ctx.fillText(p.name, x + 8, y + 4);
+  });
 }
