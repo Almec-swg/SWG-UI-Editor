@@ -20,16 +20,18 @@ function sanitizeInc(text) {
   out = out.replace(/&(?![a-zA-Z]+;)/g, "&amp;");
 
   // 2. Escape @ui: tokens inside text nodes
+  //    @ is not valid in XML entity context, so we convert it to &#64;
   out = out.replace(/>@ui:/g, ">&#64;ui:");
 
   // 3. Convert illegal attribute names with dots into XML-safe names
   //    Example: foo.bar="x" → foo_bar="x"
-  //    Case is preserved; we just swap '.' → '_'
+  //    Case is preserved exactly.
   out = out.replace(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)=/g, "$1_$2=");
 
-  // 4. Wrap in a root element
+  // 4. Wrap in a root element so DOMParser accepts the fragment
   return `<Root>${out}</Root>`;
 }
+
 
 // ============================================================================
 // UI wiring
