@@ -217,11 +217,9 @@ function parseDDS(arrayBuffer) {
   const pfFlags = d.getUint32(80, true);
   const fourCC = d.getUint32(84, true);
 
-  const DDSD_MIPMAPCOUNT = 0x20000;
   const DDPF_FOURCC = 0x4;
 
-  let isFourCC = (pfFlags & DDPF_FOURCC) !== 0;
-  if (!isFourCC) {
+  if (!(pfFlags & DDPF_FOURCC)) {
     throw new Error("DDS is not FOURCC-compressed");
   }
 
@@ -232,11 +230,8 @@ function parseDDS(arrayBuffer) {
     ("1".charCodeAt(0) << 24);
 
   if (fourCC !== FOURCC_DXT1) {
-    throw new Error("Only DXT1/BC1 DDS supported in this decoder");
+    throw new Error("Only DXT1/BC1 DDS supported");
   }
-
-  const hasMips = (d.getUint32(8, true) & DDSD_MIPMAPCOUNT) !== 0;
-  const mipmaps = hasMips ? mipMapCount : 1;
 
   const headerSize = 128;
   const dataOffset = headerSize;
@@ -245,7 +240,6 @@ function parseDDS(arrayBuffer) {
   return {
     width,
     height,
-    mipmaps,
     data: byteArray
   };
 }
@@ -331,7 +325,7 @@ function decodeDXT1(dds) {
 }
 
 // ============================================================================
-// Background loading (DDS)
+// Background loading (DDS) — Option B patch
 // ============================================================================
 
 const canvas = document.getElementById("mapCanvas");
@@ -351,21 +345,28 @@ async function loadBackground() {
     const sections = getMapSections();
     if (!sections) return;
 
+    // Only load the galaxy background image
     let imgNode = null;
     if (sections.galaxyMap) {
-      imgNode = sections.galaxyMap.querySelector("Image[Name='imageGalaxy']") ||
-                sections.galaxyMap.querySelector("Image");
+      imgNode = sections.galaxyMap.querySelector("Image[Name='imageGalaxy']");
     }
-    if (!imgNode && sections.planetsPage) {
-      imgNode = sections.planetsPage.querySelector("Image");
+
+    if (!imgNode) {
+      console.warn("Galaxy background image not found.");
+      return;
     }
-    if (!imgNode) return;
 
     const srcRes = imgNode.getAttribute("SourceResource") || "ui_rebel_starfield";
     const ddsPath = `assets/${srcRes}.dds`;
 
+    console.log("Loading background DDS:", ddsPath);
+
     const resp = await fetch(ddsPath);
-    if (!resp.ok) throw new Error("Failed to load DDS");
+    if (!resp.ok) {
+      console.error("Failed to load background DDS:", ddsPath);
+      return;
+    }
+
     const buf = await resp.arrayBuffer();
 
     const dds = parseDDS(buf);
@@ -440,7 +441,7 @@ function render() {
 
 let drag = {
   active: false,
-  type: null, // "planet" or "button"
+  type: null,
   target: null,
   offsetX: 0,
   offsetY: 0
@@ -573,35 +574,4 @@ function renderTables() {
 }
 
 // ============================================================================
-// DataSource table (appearanceTemplate editor)
-// ============================================================================
-
-const dataSourceTableBody = document.querySelector("#dataSourceTable tbody");
-
-function renderDataSourcesTable() {
-  if (!dataSourceTableBody) return;
-
-  dataSourceTableBody.innerHTML = "";
-
-  dataSources.forEach(ds => {
-    const tr = document.createElement("tr");
-
-    const nameTd = document.createElement("td");
-    nameTd.textContent = ds.name;
-    tr.appendChild(nameTd);
-
-    const appTd = document.createElement("td");
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = ds.appearanceTemplate;
-    input.size = 40;
-    input.addEventListener("change", () => {
-      ds.appearanceTemplate = input.value;
-      ds.dataNode.setAttribute("appearanceTemplate", input.value);
-    });
-    appTd.appendChild(input);
-    tr.appendChild(appTd);
-
-    dataSourceTableBody.appendChild(tr);
-  });
-}
+// DataSource table (appearance
