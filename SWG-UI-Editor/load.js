@@ -4,9 +4,21 @@ let xmlDoc = null;
 let planets = [];
 let canvas, ctx;
 
-// Planet image cache: planetName → HTMLImageElement
+// Planet image cache: planetName -> CanvasImageSource (Image or Canvas)
 const planetImages = new Map();
 let hoveredPlanet = null;
+
+// Reusable offscreen WebGL decoder state for DDS planet textures.
+const ddsPlanetDecoder = {
+  canvas: null,
+  gl: null,
+  program: null,
+  buffer: null,
+  texture: null,
+  ext: null,
+  aPosition: -1,
+  aTexCoord: -1
+};
 
 // GalaxyMap page offset within the map page (applied during parse, subtracted on export)
 let gmOx = 0;
@@ -323,19 +335,204 @@ function findMatchingPlanet(filename) {
   return m || null;
 }
 
+function initDdsPlanetDecoder() {
+  if (ddsPlanetDecoder.gl) return ddsPlanetDecoder;
+
+  const decoderCanvas = document.createElement("canvas");
+  decoderCanvas.width = 64;
+  decoderCanvas.height = 64;
+
+  const gl = decoderCanvas.getContext("webgl", {
+    alpha: true,
+    premultipliedAlpha: false,
+    antialias: false,
+    preserveDrawingBuffer: true
+  });
+
+  if (!gl) {
+    throw new Error("WebGL is unavailable for DDS planet decoding.");
+  }
+
+  const ext = gl.getExtension("WEBGL_compressed_texture_s3tc");
+  if (!ext) {
+    throw new Error("S3TC DDS textures are not supported in this browser.");
+  }
+
+  const vsSource = `
+    attribute vec2 aPosition;
+    attribute vec2 aTexCoord;
+    varying vec2 vTexCoord;
+    void main() {
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+      vTexCoord = aTexCoord;
+    }
+  `;
+
+  const fsSource = `
+    precision mediump float;
+    varying vec2 vTexCoord;
+    uniform sampler2D uTexture;
+    void main() {
+      gl_FragColor = texture2D(uTexture, vTexCoord);
+    }
+  `;
+
+  function compile(type, src) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, src);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const info = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new Error(`DDS decoder shader compile failed: ${info}`);
+    }
+    return shader;
+  }
+
+  const vs = compile(gl.VERTEX_SHADER, vsSource);
+  const fs = compile(gl.FRAGMENT_SHADER, fsSource);
+
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(`DDS decoder program link failed: ${gl.getProgramInfoLog(program)}`);
+  }
+
+  gl.useProgram(program);
+
+  const vertices = new Float32Array([
+    -1, -1, 0, 1,
+     1, -1, 1, 1,
+    -1,  1, 0, 0,
+     1,  1, 1, 0
+  ]);
+
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+  const aPosition = gl.getAttribLocation(program, "aPosition");
+  const aTexCoord = gl.getAttribLocation(program, "aTexCoord");
+  gl.enableVertexAttribArray(aPosition);
+  gl.enableVertexAttribArray(aTexCoord);
+  gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
+
+  const texture = gl.createTexture();
+
+  ddsPlanetDecoder.canvas = decoderCanvas;
+  ddsPlanetDecoder.gl = gl;
+  ddsPlanetDecoder.program = program;
+  ddsPlanetDecoder.buffer = buffer;
+  ddsPlanetDecoder.texture = texture;
+  ddsPlanetDecoder.ext = ext;
+  ddsPlanetDecoder.aPosition = aPosition;
+  ddsPlanetDecoder.aTexCoord = aTexCoord;
+
+  return ddsPlanetDecoder;
+}
+
+function ddsFormatToGlInternalFormat(ddsFormat, ext) {
+  if (ddsFormat === "DXT1") return ext.COMPRESSED_RGBA_S3TC_DXT1_EXT;
+  if (ddsFormat === "DXT3") return ext.COMPRESSED_RGBA_S3TC_DXT3_EXT;
+  if (ddsFormat === "DXT5") return ext.COMPRESSED_RGBA_S3TC_DXT5_EXT;
+  throw new Error(`Unsupported DDS format: ${ddsFormat}`);
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function decodeDdsFileToCanvas(file) {
+  const decoder = initDdsPlanetDecoder();
+  const buffer = await readFileAsArrayBuffer(file);
+
+  const dds = new DDSImage();
+  dds.parse(buffer);
+
+  const internalFormat = ddsFormatToGlInternalFormat(dds.format, decoder.ext);
+  const gl = decoder.gl;
+
+  decoder.canvas.width = dds.width;
+  decoder.canvas.height = dds.height;
+
+  gl.viewport(0, 0, dds.width, dds.height);
+  gl.useProgram(decoder.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, decoder.buffer);
+  gl.vertexAttribPointer(decoder.aPosition, 2, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribPointer(decoder.aTexCoord, 2, gl.FLOAT, false, 16, 8);
+
+  gl.bindTexture(gl.TEXTURE_2D, decoder.texture);
+  dds.levels.forEach((level, index) => {
+    gl.compressedTexImage2D(
+      gl.TEXTURE_2D,
+      index,
+      internalFormat,
+      level.width,
+      level.height,
+      0,
+      level.data
+    );
+  });
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dds.levels.length > 1 ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = dds.width;
+  outCanvas.height = dds.height;
+  const outCtx = outCanvas.getContext("2d");
+  outCtx.drawImage(decoder.canvas, 0, 0);
+
+  return outCanvas;
+}
+
 function loadPlanetImages(files) {
-  Array.from(files).forEach(file => {
+  Array.from(files).forEach(async file => {
     const matched = findMatchingPlanet(file.name);
     if (!matched) {
       console.warn(`No planet matched for image: ${file.name}`);
       return;
     }
-    const img = new Image();
-    img.onload = () => {
-      planetImages.set(matched.name, img);
-      render();
-    };
-    img.src = URL.createObjectURL(file);
+
+    const isDds = file.name.toLowerCase().endsWith(".dds");
+
+    try {
+      if (isDds) {
+        const canvasImage = await decodeDdsFileToCanvas(file);
+        planetImages.set(matched.name, canvasImage);
+        render();
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        planetImages.set(matched.name, img);
+        URL.revokeObjectURL(img.src);
+        render();
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        console.error(`Failed to decode image: ${file.name}`);
+      };
+      img.src = URL.createObjectURL(file);
+    } catch (error) {
+      console.error(`Failed to load planet texture '${file.name}':`, error);
+    }
   });
 }
 
