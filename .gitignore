@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Electron build output
+/dist/
+/dist-*/
+
+# Build artifacts
+*.blockmap
+*.asar
+*.pak
