@@ -319,20 +319,32 @@ function updateTables() {
 // ---------------------------------------------------------------------------
 // PLANET IMAGE LOADING
 // ---------------------------------------------------------------------------
-function findMatchingPlanet(filename) {
-  const base = filename.replace(/\.[^.]+$/, '').toLowerCase();
-  // Exact planet name
-  let m = planets.find(p => p.name.toLowerCase() === base);
-  if (m) return m;
-  // Exact apt key (e.g. "tato" for Tatooine)
-  m = planets.find(p => p.aptKey === base);
-  if (m) return m;
-  // Filename contains apt key (e.g. "ui_planet_sel_tato")
-  m = planets.find(p => base.includes(p.aptKey));
-  if (m) return m;
-  // Filename contains planet name
-  m = planets.find(p => base.includes(p.name.toLowerCase()));
-  return m || null;
+function findMatchingPlanets(filename) {
+  const base = filename.replace(/\.[^.]+$/, "").toLowerCase();
+
+  const unique = list => {
+    const byName = new Map();
+    list.forEach(p => byName.set(p.name, p));
+    return [...byName.values()];
+  };
+
+  // 1) Exact planet name match
+  let matches = planets.filter(p => p.name.toLowerCase() === base);
+  if (matches.length) return unique(matches);
+
+  // 2) Exact apt key match (can map to multiple planets)
+  matches = planets.filter(p => p.aptKey === base);
+  if (matches.length) return unique(matches);
+
+  // 3) Filename contains apt key (e.g. ui_planet_sel_tato)
+  matches = planets.filter(p => base.includes(p.aptKey));
+  if (matches.length) return unique(matches);
+
+  // 4) Filename contains planet name
+  matches = planets.filter(p => base.includes(p.name.toLowerCase()));
+  if (matches.length) return unique(matches);
+
+  return [];
 }
 
 function initDdsPlanetDecoder() {
@@ -503,8 +515,8 @@ async function decodeDdsFileToCanvas(file) {
 
 function loadPlanetImages(files) {
   Array.from(files).forEach(async file => {
-    const matched = findMatchingPlanet(file.name);
-    if (!matched) {
+    const matchedPlanets = findMatchingPlanets(file.name);
+    if (!matchedPlanets.length) {
       console.warn(`No planet matched for image: ${file.name}`);
       return;
     }
@@ -514,14 +526,14 @@ function loadPlanetImages(files) {
     try {
       if (isDds) {
         const canvasImage = await decodeDdsFileToCanvas(file);
-        planetImages.set(matched.name, canvasImage);
+        matchedPlanets.forEach(planet => planetImages.set(planet.name, canvasImage));
         render();
         return;
       }
 
       const img = new Image();
       img.onload = () => {
-        planetImages.set(matched.name, img);
+        matchedPlanets.forEach(planet => planetImages.set(planet.name, img));
         URL.revokeObjectURL(img.src);
         render();
       };
@@ -665,6 +677,8 @@ function drawPlanetMarker(p, hovered) {
   if (img) {
     // Clip to inner ellipse and draw image
     ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.beginPath();
     ctx.ellipse(cx, cy, irx, iry, 0, 0, Math.PI * 2);
     ctx.clip();
